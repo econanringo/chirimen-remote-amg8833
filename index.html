@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>AMG8833 Thermography</title>
+<style>
+  body {
+    background-color: #121212;
+    color: #eee;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    user-select: none;
+  }
+  h3 {
+    margin-bottom: 10px;
+  }
+  #container {
+    background: #222;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 0 15px #0ff;
+    display: inline-block;
+  }
+  canvas {
+    image-rendering: pixelated;
+    border-radius: 8px;
+    border: 2px solid #0ff;
+    display: block;
+  }
+  #tempInfo {
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 1.1rem;
+    font-weight: 600;
+    width: 320px; /* PIXEL_SIZE * SIZE */
+  }
+  #gradientBar {
+    margin-top: 10px;
+    width: 320px;
+    height: 20px;
+    border-radius: 8px;
+    background: linear-gradient(to right, 
+      rgb(0,0,255), 
+      rgb(0,255,255), 
+      rgb(0,255,0), 
+      rgb(255,255,0), 
+      rgb(255,0,0));
+    box-shadow: 0 0 10px #0ff;
+  }
+</style>
+<script type="module">
+import { RelayServer } from "https://chirimen.org/remote-connection/js/beta/RelayServer.js";
+
+const PIXEL_SIZE = 40;  
+const SIZE = 8;         
+
+let pixels = new Array(SIZE * SIZE).fill(0); 
+
+const canvas = document.createElement("canvas");
+canvas.id = "thermo";
+canvas.width = PIXEL_SIZE * SIZE;
+canvas.height = PIXEL_SIZE * SIZE;
+document.body.innerHTML = `
+  <div id="container">
+    <h3>AMG8833 Thermography</h3>
+    <canvas id="thermo" width="${canvas.width}" height="${canvas.height}"></canvas>
+    <div id="tempInfo">
+      <div id="minTemp">Min: -- °C</div>
+      <div id="maxTemp">Max: -- °C</div>
+    </div>
+    <div id="gradientBar"></div>
+  </div>
+`;
+const ctx = document.getElementById("thermo").getContext("2d");
+const minTempEl = document.getElementById("minTemp");
+const maxTempEl = document.getElementById("maxTemp");
+
+onload = async function () {
+  const relay = RelayServer("chirimentest", "chirimenSocket");
+  const channel = await relay.subscribe("amg8833_thermo");
+  console.log("WebSocket接続完了");
+  channel.onmessage = (msg) => {
+    try {
+      pixels = JSON.parse(msg.data);
+      drawThermo();
+    } catch (e) {
+      console.error("受信データエラー", e);
+    }
+  };
+};
+
+function drawThermo() {
+  const minT = Math.min(...pixels);
+  const maxT = Math.max(...pixels);
+
+  minTempEl.textContent = `Min: ${minT.toFixed(1)} °C`;
+  maxTempEl.textContent = `Max: ${maxT.toFixed(1)} °C`;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const t = pixels[y * SIZE + x];
+      const color = tempToColor(t, minT, maxT);
+      ctx.fillStyle = color;
+      ctx.fillRect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+    }
+  }
+}
+
+function tempToColor(temp, minT, maxT) {
+  const ratio = (temp - minT) / (maxT - minT + 1e-6);
+  
+  const r = Math.floor(255 * Math.min(Math.max(1.5 - Math.abs(4 * ratio - 3), 0), 1));
+  const g = Math.floor(255 * Math.min(Math.max(1.5 - Math.abs(4 * ratio - 2), 0), 1));
+  const b = Math.floor(255 * Math.min(Math.max(1.5 - Math.abs(4 * ratio - 1), 0), 1));
+  
+  return `rgb(${r},${g},${b})`;
+}
+</script>
+</head>
+<body>
+</body>
+</html>
